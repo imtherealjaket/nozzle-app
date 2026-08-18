@@ -15,8 +15,8 @@
     <!-- Vue 3 for reactive app logic -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 
-    <!-- Generic Green Icon Placeholder -->
-    <link rel="apple-touch-icon" href="IMG_0308.png">
+    <!-- App Icon - Pointing to your uploaded icon.png -->
+    <link rel="apple-touch-icon" href="icon.png">
     
     <style>
         /* Prevents pull-to-refresh and selection to feel native */
@@ -233,7 +233,17 @@
                 });
 
                 const filteredNozzles = computed(() => {
-                    return nozzleData.filter(n => n.gasType === selectedGas.value);
+                    // Filter the nozzles by the currently selected gas type
+                    let results = nozzleData.filter(n => n.gasType === selectedGas.value);
+                    
+                    // Automatically sort them by tip size (largest to smallest)
+                    // If tip sizes are identical, sort by max BTUs (largest to smallest)
+                    return results.sort((a, b) => {
+                        if (a.tipSize !== b.tipSize) {
+                            return b.tipSize - a.tipSize;
+                        }
+                        return b.btus - a.btus;
+                    });
                 });
 
                 // Calculator state
