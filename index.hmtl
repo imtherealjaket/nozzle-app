@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- iOS App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nozzle BTUs">
+    <title>Heating Nozzles & BTUs</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Vue 3 for reactive app logic -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <!-- iOS Home Screen Icon Placeholder (You can replace the href with a link to your own square logo) -->
+    <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e0/Fire_Icon.svg/512px-Fire_Icon.svg.png">
+    
+    <style>
+        /* Prevents pull-to-refresh and selection to feel native */
+        body {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            background-color: #f3f4f6;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            padding-bottom: 80px; /* Space for bottom nav */
+        }
+        .safe-top {
+            padding-top: env(safe-area-inset-top);
+        }
+        .safe-bottom {
+            padding-bottom: calc(env(safe-area-inset-bottom) + 60px);
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-red-600 text-white p-4 safe-top shadow-md sticky top-0 z-10">
+            <h1 class="text-xl font-bold text-center">CUTSKILL Reference</h1>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow p-4">
+            
+            <!-- VIEW: SELECTOR -->
+            <div v-show="activeTab === 'selector'">
+                <div class="bg-white rounded-lg shadow p-4 mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Select Gas Type</label>
+                    <select v-model="selectedGas" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg focus:ring-red-500 focus:border-red-500 block p-2.5 outline-none">
+                        <option v-for="gas in allGases" :key="gas" :value="gas">{{ gas }}</option>
+                    </select>
+                    <p class="text-xs text-gray-500 mt-2">
+                        Nozzle Type: <span class="font-bold text-gray-700">{{ activeNozzleType }}</span>
+                        <span v-if="activeNozzleType === 'Type 55'" class="block text-red-500 font-semibold mt-1">NOT FOR USE WITH ACETYLENE</span>
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div v-for="(nozzle, index) in filteredNozzles" :key="index" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="bg-gray-800 text-white px-4 py-2 flex justify-between items-center">
+                            <span class="font-bold">Tip Size: {{ nozzle.tipSize }}</span>
+                            <span class="text-sm bg-red-600 px-2 py-1 rounded">{{ nozzle.btus.toLocaleString() }} BTU</span>
+                        </div>
+                        <div class="p-4 space-y-3 text-sm">
+                            <div class="grid grid-cols-2 gap-2 border-b border-gray-100 pb-2">
+                                <div>
+                                    <p class="text-gray-500 text-xs uppercase">Part Number</p>
+                                    <p class="font-semibold">{{ nozzle.partNumber }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-500 text-xs uppercase">Torch / Handle PN</p>
+                                    <p class="font-semibold">{{ nozzle.torchHandle }} / {{ nozzle.torchPartNumber }}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="bg-blue-50 p-2 rounded">
+                                    <p class="text-blue-800 font-bold text-xs uppercase mb-1">Oxygen</p>
+                                    <p>Pressure: {{ nozzle.oxygenPressure }} psig</p>
+                                    <p>Consump: {{ nozzle.oxygenConsumption }} SCFH</p>
+                                </div>
+                                <div class="bg-orange-50 p-2 rounded">
+                                    <p class="text-orange-800 font-bold text-xs uppercase mb-1">Fuel Gas</p>
+                                    <p>Pressure: {{ nozzle.fuelPressure }} psig</p>
+                                    <p>Consump: {{ nozzle.fuelConsumption }} SCFH</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-if="filteredNozzles.length === 0" class="text-center text-gray-500 mt-10">
+                    No nozzles found for this configuration.
+                </div>
+            </div>
+
+            <!-- VIEW: CALCULATOR -->
+            <div v-show="activeTab === 'calc'">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">BTU / SCFH Calculator</h2>
+                    
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Gas Type</label>
+                    <select v-model="calcGas" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-2.5 mb-4 outline-none">
+                        <option v-for="(factor, gas) in multipliers" :key="gas" :value="gas">{{ gas }}</option>
+                    </select>
+
+                    <div class="flex gap-2 mb-4">
+                        <button @click="calcMode = 'scfh'" :class="calcMode === 'scfh' ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-700'" class="flex-1 py-2 rounded font-semibold text-sm transition">Input SCFH</button>
+                        <button @click="calcMode = 'btu'" :class="calcMode === 'btu' ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-700'" class="flex-1 py-2 rounded font-semibold text-sm transition">Input BTUs</button>
+                    </div>
+
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                        {{ calcMode === 'scfh' ? 'Enter SCFH' : 'Enter BTUs' }}
+                    </label>
+                    <input type="number" v-model="calcValue" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg p-3 text-lg font-bold mb-6 outline-none text-center" placeholder="0">
+
+                    <div class="bg-red-50 text-red-900 p-4 rounded-lg text-center border border-red-100">
+                        <p class="text-sm font-semibold uppercase mb-1">Result</p>
+                        <p class="text-3xl font-bold">{{ calculationResult }}</p>
+                        <p class="text-xs text-red-600 mt-2">Multiplier: {{ multipliers[calcGas] }} per SCFH</p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Bottom Navigation Menu (iOS style) -->
+        <nav class="fixed bottom-0 w-full bg-white border-t border-gray-200 flex safe-bottom z-20">
+            <button @click="activeTab = 'selector'" :class="activeTab === 'selector' ? 'text-red-600' : 'text-gray-500'" class="flex-1 py-3 flex flex-col items-center">
+                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
+                <span class="text-[10px] font-bold uppercase tracking-wider">Selector</span>
+            </button>
+            <button @click="activeTab = 'calc'" :class="activeTab === 'calc' ? 'text-red-600' : 'text-gray-500'" class="flex-1 py-3 flex flex-col items-center">
+                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                <span class="text-[10px] font-bold uppercase tracking-wider">Calculator</span>
+            </button>
+        </nav>
+    </div>
+
+    <script>
+        const { createApp, ref, computed } = Vue;
+
+        const nozzleData = [
+            {"gasType":"Acetylene","type":"MFA","tipSize":15,"oxygenPressure":60,"oxygenConsumption":244,"fuelPressure":15,"fuelConsumption":220,"btus":323400,"partNumber":"CSMFA15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":12,"oxygenPressure":60,"oxygenConsumption":165,"fuelPressure":15,"fuelConsumption":150,"btus":220500,"partNumber":"CSMFA12","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":10,"oxygenPressure":40,"oxygenConsumption":110,"fuelPressure":15,"fuelConsumption":100,"btus":147000,"partNumber":"CSMFA10","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":15,"oxygenPressure":50,"oxygenConsumption":99,"fuelPressure":12,"fuelConsumption":90,"btus":132300,"partNumber":"CSMFA15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":8,"oxygenPressure":30,"oxygenConsumption":88,"fuelPressure":15,"fuelConsumption":80,"btus":117600,"partNumber":"CSMFA8","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":12,"oxygenPressure":50,"oxygenConsumption":66,"fuelPressure":15,"fuelConsumption":60,"btus":88200,"partNumber":"CSMFA12","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":6,"oxygenPressure":15,"oxygenConsumption":44,"fuelPressure":12,"fuelConsumption":40,"btus":58800,"partNumber":"CSMFA6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":10,"oxygenPressure":30,"oxygenConsumption":44,"fuelPressure":12,"fuelConsumption":40,"btus":58800,"partNumber":"CSMFA10","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":8,"oxygenPressure":20,"oxygenConsumption":33,"fuelPressure":10,"fuelConsumption":30,"btus":44100,"partNumber":"CSMFA8","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":4,"oxygenPressure":12,"oxygenConsumption":22,"fuelPressure":10,"fuelConsumption":20,"btus":29400,"partNumber":"CSMFA4","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":6,"oxygenPressure":10,"oxygenConsumption":22,"fuelPressure":8,"fuelConsumption":14,"btus":20580,"partNumber":"CSMFA6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Acetylene","type":"MFA","tipSize":4,"oxygenPressure":8,"oxygenConsumption":7,"fuelPressure":6,"fuelConsumption":6,"btus":8820,"partNumber":"CSMFA4","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":15,"oxygenPressure":60,"oxygenConsumption":244,"fuelPressure":15,"fuelConsumption":220,"btus":220000,"partNumber":"CSMFA15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Methane","type":"MFA","tipSize":12,"oxygenPressure":60,"oxygenConsumption":165,"fuelPressure":15,"fuelConsumption":150,"btus":150000,"partNumber":"CSMFA12","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Methane","type":"MFA","tipSize":10,"oxygenPressure":40,"oxygenConsumption":110,"fuelPressure":15,"fuelConsumption":100,"btus":100000,"partNumber":"CSMFA10","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":15,"oxygenPressure":50,"oxygenConsumption":99,"fuelPressure":12,"fuelConsumption":90,"btus":90000,"partNumber":"CSMFA15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Methane","type":"MFA","tipSize":8,"oxygenPressure":30,"oxygenConsumption":88,"fuelPressure":15,"fuelConsumption":80,"btus":80000,"partNumber":"CSMFA8","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":12,"oxygenPressure":50,"oxygenConsumption":66,"fuelPressure":15,"fuelConsumption":60,"btus":60000,"partNumber":"CSMFA12","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Methane","type":"MFA","tipSize":6,"oxygenPressure":15,"oxygenConsumption":44,"fuelPressure":12,"fuelConsumption":40,"btus":40000,"partNumber":"CSMFA6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":10,"oxygenPressure":30,"oxygenConsumption":44,"fuelPressure":12,"fuelConsumption":40,"btus":40000,"partNumber":"CSMFA10","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":8,"oxygenPressure":20,"oxygenConsumption":33,"fuelPressure":10,"fuelConsumption":30,"btus":30000,"partNumber":"CSMFA8","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":4,"oxygenPressure":12,"oxygenConsumption":22,"fuelPressure":10,"fuelConsumption":20,"btus":20000,"partNumber":"CSMFA4","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":6,"oxygenPressure":10,"oxygenConsumption":15,"fuelPressure":8,"fuelConsumption":14,"btus":14000,"partNumber":"CSMFA6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Methane","type":"MFA","tipSize":4,"oxygenPressure":8,"oxygenConsumption":7,"fuelPressure":6,"fuelConsumption":6,"btus":6000,"partNumber":"CSMFA4","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Butane","type":"Type 55","tipSize":20,"oxygenPressure":150,"oxygenConsumption":1150,"fuelPressure":50,"fuelConsumption":500,"btus":1687000,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":20,"oxygenPressure":100,"oxygenConsumption":900,"fuelPressure":30,"fuelConsumption":400,"btus":1349600,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":15,"oxygenPressure":120,"oxygenConsumption":800,"fuelPressure":35,"fuelConsumption":350,"btus":1180900,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":15,"oxygenPressure":90,"oxygenConsumption":600,"fuelPressure":20,"fuelConsumption":250,"btus":843500,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":10,"oxygenPressure":100,"oxygenConsumption":460,"fuelPressure":25,"fuelConsumption":200,"btus":674800,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":10,"oxygenPressure":70,"oxygenConsumption":360,"fuelPressure":15,"fuelConsumption":150,"btus":506100,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Butane","type":"Type 55","tipSize":8,"oxygenPressure":70,"oxygenConsumption":220,"fuelPressure":15,"fuelConsumption":85,"btus":286790,"partNumber":"CSTYPE55-8","torchHandle":"HD 310C/300","torchPartNumber":"0382-0015/0382-0093"},
+            {"gasType":"Butane","type":"Type 55","tipSize":6,"oxygenPressure":70,"oxygenConsumption":160,"fuelPressure":15,"fuelConsumption":65,"btus":219310,"partNumber":"CSTYPE55-6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":20,"oxygenPressure":150,"oxygenConsumption":1150,"fuelPressure":50,"fuelConsumption":500,"btus":500000,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":20,"oxygenPressure":100,"oxygenConsumption":900,"fuelPressure":30,"fuelConsumption":400,"btus":400000,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":15,"oxygenPressure":120,"oxygenConsumption":800,"fuelPressure":35,"fuelConsumption":350,"btus":350000,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":15,"oxygenPressure":90,"oxygenConsumption":600,"fuelPressure":20,"fuelConsumption":250,"btus":250000,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":10,"oxygenPressure":100,"oxygenConsumption":460,"fuelPressure":25,"fuelConsumption":200,"btus":200000,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":10,"oxygenPressure":70,"oxygenConsumption":360,"fuelPressure":15,"fuelConsumption":150,"btus":150000,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":8,"oxygenPressure":70,"oxygenConsumption":220,"fuelPressure":15,"fuelConsumption":85,"btus":85000,"partNumber":"CSTYPE55-8","torchHandle":"HD 310C/300","torchPartNumber":"0382-0015/0382-0093"},
+            {"gasType":"Natural Gas","type":"Type 55","tipSize":6,"oxygenPressure":70,"oxygenConsumption":160,"fuelPressure":15,"fuelConsumption":65,"btus":65000,"partNumber":"CSTYPE55-6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Propane","type":"Type 55","tipSize":20,"oxygenPressure":150,"oxygenConsumption":1150,"fuelPressure":50,"fuelConsumption":500,"btus":1249000,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":20,"oxygenPressure":100,"oxygenConsumption":900,"fuelPressure":30,"fuelConsumption":400,"btus":999200,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":15,"oxygenPressure":120,"oxygenConsumption":800,"fuelPressure":35,"fuelConsumption":350,"btus":874300,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":15,"oxygenPressure":90,"oxygenConsumption":600,"fuelPressure":20,"fuelConsumption":250,"btus":624500,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":10,"oxygenPressure":100,"oxygenConsumption":460,"fuelPressure":25,"fuelConsumption":200,"btus":499600,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":10,"oxygenPressure":70,"oxygenConsumption":360,"fuelPressure":15,"fuelConsumption":150,"btus":374700,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propane","type":"Type 55","tipSize":8,"oxygenPressure":70,"oxygenConsumption":220,"fuelPressure":15,"fuelConsumption":85,"btus":212330,"partNumber":"CSTYPE55-8","torchHandle":"HD 310C/300","torchPartNumber":"0382-0015/0382-0093"},
+            {"gasType":"Propane","type":"Type 55","tipSize":6,"oxygenPressure":70,"oxygenConsumption":160,"fuelPressure":15,"fuelConsumption":65,"btus":162370,"partNumber":"CSTYPE55-6","torchHandle":"300","torchPartNumber":"0382-0093"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":20,"oxygenPressure":150,"oxygenConsumption":1150,"fuelPressure":50,"fuelConsumption":500,"btus":1185500,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":20,"oxygenPressure":100,"oxygenConsumption":900,"fuelPressure":30,"fuelConsumption":400,"btus":948400,"partNumber":"CSTYPE55-20","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":15,"oxygenPressure":120,"oxygenConsumption":800,"fuelPressure":35,"fuelConsumption":350,"btus":829850,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":15,"oxygenPressure":90,"oxygenConsumption":600,"fuelPressure":20,"fuelConsumption":250,"btus":592750,"partNumber":"CSTYPE55-15","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":10,"oxygenPressure":100,"oxygenConsumption":460,"fuelPressure":25,"fuelConsumption":200,"btus":474200,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":10,"oxygenPressure":70,"oxygenConsumption":360,"fuelPressure":15,"fuelConsumption":150,"btus":355650,"partNumber":"CSTYPE55-10","torchHandle":"HD 310C","torchPartNumber":"0382-0015"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":8,"oxygenPressure":70,"oxygenConsumption":220,"fuelPressure":15,"fuelConsumption":85,"btus":201535,"partNumber":"CSTYPE55-8","torchHandle":"HD 310C/300","torchPartNumber":"0382-0015/0382-0093"},
+            {"gasType":"Propylene","type":"Type 55","tipSize":6,"oxygenPressure":70,"oxygenConsumption":160,"fuelPressure":15,"fuelConsumption":65,"btus":154115,"partNumber":"CSTYPE55-6","torchHandle":"300","torchPartNumber":"0382-0093"}
+        ];
+
+        const allGases = ['Propane', 'Natural Gas', 'Butane', 'Propylene', 'Acetylene', 'Methane'];
+        const multipliers = {
+            'Propane': 2498,
+            'Natural Gas': 1000,
+            'Butane': 3374,
+            'Propylene': 2371,
+            'Acetylene': 1470,
+            'Methane': 1000
+        };
+
+        createApp({
+            setup() {
+                const activeTab = ref('selector');
+                
+                // Selector state
+                const selectedGas = ref('Propane');
+                
+                const activeNozzleType = computed(() => {
+                    if (selectedGas.value === 'Acetylene' || selectedGas.value === 'Methane') {
+                        return 'MFA';
+                    }
+                    return 'Type 55';
+                });
+
+                const filteredNozzles = computed(() => {
+                    return nozzleData.filter(n => n.gasType === selectedGas.value);
+                });
+
+                // Calculator state
+                const calcGas = ref('Propane');
+                const calcMode = ref('scfh');
+                const calcValue = ref('');
+
+                const calculationResult = computed(() => {
+                    if (!calcValue.value) return '0';
+                    const mult = multipliers[calcGas.value];
+                    if (calcMode.value === 'scfh') {
+                        return (calcValue.value * mult).toLocaleString() + ' BTUs';
+                    } else {
+                        return (calcValue.value / mult).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 2}) + ' SCFH';
+                    }
+                });
+
+                return {
+                    activeTab,
+                    allGases,
+                    selectedGas,
+                    activeNozzleType,
+                    filteredNozzles,
+                    multipliers,
+                    calcGas,
+                    calcMode,
+                    calcValue,
+                    calculationResult
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
